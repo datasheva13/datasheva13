@@ -1,0 +1,22 @@
+# secrets & local config - never commit
+.env
+config.yaml
+secrets/
+
+# media & working files
+work/
+inbox/
+handoff/
+music/
+fonts/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.wav
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

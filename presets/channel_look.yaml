@@ -1,0 +1,30 @@
+# Channel look: cinematic but natural, for GoPro HERO11 "Flat" footage.
+# tools/analyze_refs.py can rewrite these numbers from your reference videos.
+# Every value is blended toward neutral by `strength` (dashboard slider).
+name: channel_look
+strength: 1.0
+
+# Flat -> Rec.709 base conversion (restores contrast the Flat profile removes)
+base_contrast: 1.10          # 1.0 = untouched
+base_saturation: 1.12
+
+# Tone curve (input/output pairs, 0..1). Soft highlight rolloff, lightly lifted blacks.
+curve_master: [[0.0, 0.025], [0.25, 0.20], [0.50, 0.50], [0.75, 0.79], [1.0, 0.955]]
+
+# Creative color (restrained). colorbalance ranges are -1..1, keep tiny.
+shadows_rgb: [-0.02, 0.0, 0.035]     # slightly cool shadows
+midtones_rgb: [0.0, 0.0, 0.0]
+highlights_rgb: [0.03, 0.01, -0.025] # slightly warm highlights
+saturation: 0.94                     # final saturation (moody = a touch under 1.0)
+greens_desat: 0.12                   # tame neon GoPro greens (0..1)
+
+grain: 6                             # 0 = off; 4-8 is "barely there" at 4K
+vignette: 0.32                       # 0 = off; 0.3-0.4 subtle
+lut: null                            # optional path to a .cube LUT applied after the curve
+lut_mix: 1.0
+
+# Per-clip normalization (computed automatically from the footage)
+normalize_exposure: true
+normalize_white_balance: true
+target_luma: 0.43                    # average brightness the clip is nudged toward
+max_exposure_ev: 0.6

@@ -1,0 +1,76 @@
+# Copy this file to config.yaml and adjust. Secrets go in .env, never here.
+
+paths:
+  work_dir: ./work              # downloads, proxies, renders, database
+  inbox_dir: ./inbox            # fallback: drop GoPro files here by hand
+  handoff_dir: ./handoff        # point this at a Google Drive / iCloud folder your phone can see
+  keep_raw_days: 21             # raw files are deleted after this (originals stay in GoPro Cloud
+                                # and are re-downloaded automatically if ever needed again)
+
+gopro:
+  enabled: true                 # unofficial GoPro Cloud API (token in .env: GOPRO_ACCESS_TOKEN)
+  max_downloads_per_run: 10
+  only_videos_newer_than_days: 30
+
+daily:
+  shorts_per_day: 3
+  short_min_seconds: 9
+  short_max_seconds: 20
+  run_time: "06:15"             # used by scripts/install_windows_task.ps1
+
+longform:
+  enabled: true
+  min_unused_minutes: 6         # build a long video once this much good footage is waiting
+  target_minutes: 8
+  segment_min_seconds: 25
+  segment_max_seconds: 70
+
+render:
+  encoder: auto                 # auto | hevc_nvenc | libx265 | hevc_videotoolbox
+  bitrate_master: 100M          # YouTube masters (4K, 10-bit HEVC)
+  bitrate_social: 25M           # 1080p Instagram / TikTok exports
+  fps: source                   # source | 24 | 30
+  short_size: [2160, 3840]
+  long_size: [3840, 2160]
+  social_size: [1080, 1920]
+
+style:
+  preset: presets/channel_look.yaml
+  push_in: 0.06                 # 6% slow push-in across a short (subtle "camera move")
+  blur_sigma: 40                # background blur strength for the 9:16 layout
+  background_dim: 0.72          # background brightness (1.0 = same as foreground)
+  audio_fade: 0.35
+  music_dir: ./music            # optional: your own tracks (wav/mp3/flac)
+  music_volume_db: -16          # music sits under the exhaust
+
+captions:
+  model: claude-opus-5-5
+  tone: >-
+    Moody, slightly edgy, minimal, confident. Raw-sound off-road POV, no talking.
+    Never cheesy, never clickbait, no emojis spam (max one emoji, often none).
+  bike: "CFMOTO Ibex 450 (450MT)"
+  hashtag_pool:
+    big: ["#motorcycle", "#offroad", "#adventure"]
+    mid: ["#cfmoto", "#advriding", "#enduro", "#dualsport"]
+    niche: ["#ibex450", "#450mt", "#cfmoto450mt", "#rawsound", "#motoasmr"]
+  show_hook_on_video: true      # draw the chosen hook as text for the first seconds
+
+thumbnails:
+  font: ./fonts/Cinzel-Regular.ttf   # downloaded by setup; falls back to a system font
+  letter_spacing: 0.35               # fraction of font size between letters
+  word_height: 0.075                 # text height as a fraction of image height
+
+youtube:
+  # manual: dashboard gives you the 4K file + copy-ready title/description; you drag it into
+  #         YouTube Studio (~1 min). No Google Cloud setup needed.
+  # api:    automatic private upload. Only switch once your Google Cloud project has passed
+  #         YouTube's API audit: before that, API uploads are locked private and can't be made public.
+  mode: manual
+  privacy: private
+  category_id: "2"              # Autos & Vehicles
+  client_secrets: ./secrets/youtube_client_secret.json
+  token_file: ./secrets/youtube_token.json
+
+dashboard:
+  host: 127.0.0.1
+  port: 8765

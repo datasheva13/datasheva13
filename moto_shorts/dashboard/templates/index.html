@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moto Shorts</title>
+{% if jobs %}<meta http-equiv="refresh" content="15">{% endif %}
+<style>
+  :root { --bg:#0e0f10; --card:#17191b; --line:#26292c; --text:#e9e6e1; --dim:#8d8a85; --accent:#c9a46a; --ok:#7fb48a; --bad:#d27a6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:18px 24px; border-bottom:1px solid var(--line); }
+  h1 { font-weight:300; letter-spacing:.35em; font-size:18px; margin:0; }
+  h2 { font-weight:400; letter-spacing:.15em; font-size:13px; color:var(--dim); text-transform:uppercase; margin:28px 24px 10px; }
+  main { max-width:1300px; margin:0 auto; padding-bottom:60px; }
+  .banner { margin:16px 24px; padding:14px 16px; border:1px solid var(--bad); border-radius:10px; background:#241816; }
+  .banner form { display:flex; gap:8px; margin-top:8px; }
+  .card { display:grid; grid-template-columns: 300px 1fr; gap:24px; margin:0 24px 22px; padding:20px; background:var(--card); border:1px solid var(--line); border-radius:14px; }
+  .card.long { grid-template-columns: 1fr; }
+  video { width:100%; border-radius:10px; background:#000; }
+  .card.long video { max-height:420px; }
+  label { display:block; font-size:12px; color:var(--dim); letter-spacing:.06em; margin:12px 0 4px; text-transform:uppercase; }
+  input[type=text], textarea { width:100%; background:#0f1112; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  button { background:#24272a; color:var(--text); border:1px solid #33373b; border-radius:8px; padding:9px 14px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#151310; border-color:var(--accent); font-weight:600; }
+  button.danger { color:var(--bad); }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .hooks label.opt { display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-size:15px; color:var(--text); margin:4px 0; cursor:pointer; }
+  .thumb { width:100%; max-width:480px; border-radius:8px; display:block; }
+  .frames { display:flex; gap:6px; margin-top:6px; }
+  .frames label { margin:0; text-transform:none; }
+  .frames img { width:92px; border-radius:6px; opacity:.7; border:2px solid transparent; }
+  .frames input:checked + img { opacity:1; border-color:var(--accent); }
+  .frames input { display:none; }
+  .compare { position:relative; max-width:480px; border-radius:8px; overflow:hidden; }
+  .compare img { display:block; width:100%; }
+  .compare .after { position:absolute; inset:0; clip-path: inset(0 0 0 50%); }
+  .meta { color:var(--dim); font-size:13px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; border:1px solid var(--line); font-size:12px; color:var(--dim); }
+  .job { color:var(--accent); }
+  .err { color:var(--bad); white-space:pre-wrap; font-size:12px; max-height:120px; overflow:auto; }
+  .copybox { background:#0f1112; border:1px dashed #3a3e42; border-radius:8px; padding:10px; white-space:pre-wrap; font-size:14px; }
+  .cols { display:grid; grid-template-columns: 1fr 1fr; gap:24px; }
+  @media (max-width: 900px) { .card, .cols { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MOTO SHORTS</h1>
+  <div class="row meta">
+    {% if status.last_run_finished %}Last run: {{ status.last_run_finished[:16].replace('T',' ') }} UTC{% endif %}
+    {% for id, j in jobs.items() %}<span class="pill job">⏳ {{ j }}</span>{% endfor %}
+    <form method="post" action="/run-now"><button>Run now</button></form>
+    <form method="post" action="/build-long"><button>Build long video</button></form>
+  </div>
+</header>
+<main>
+{% if status.gopro_error %}
+<div class="banner">
+  <strong>GoPro Cloud isn't connected:</strong> {{ status.gopro_error }}<br>
+  <span class="meta">Open gopro.com/media-library, sign in, copy the <code>gp_access_token</code> cookie (see README), paste it here. Meanwhile, files dropped into the inbox folder still work.</span>
+  <form method="post" action="/gopro-token"><input type="text" name="token" placeholder="paste gp_access_token" required><button class="primary">Save</button></form>
+</div>
+{% endif %}
+
+<h2>To review ({{ review|length }})</h2>
+{% if not review %}<p class="meta" style="margin:0 24px">Nothing waiting. New shorts appear after the daily run, or press “Run now”.</p>{% endif %}
+
+{% for c in review %}
+<section class="card {{ 'long' if c.kind == 'long' }}" id="clip{{ c.id }}">
+  <div>
+    {% if c.master_path %}<video src="/media/{{ c.id }}/preview" controls loop playsinline preload="metadata"></video>{% endif %}
+    <p class="meta">
+      <span class="pill">{{ 'LONG VIDEO' if c.kind == 'long' else 'SHORT' }}</span>
+      {{ (c.duration // 60)|int }}:{{ '%02d'|format((c.duration % 60)|int) }} · score {{ '%.2f'|format(c.score or 0) }}
+      {% if c.job %}<br><span class="job">⏳ {{ c.job }}…</span>{% endif %}
+    </p>
+    {% if c.status == 'failed' or c.error %}<div class="err">{{ c.error }}</div>{% endif %}
+  </div>
+
+  <div>
+    <form method="post" action="/clip/{{ c.id }}/save">
+      <div class="hooks">
+        <label>Hook (shown on the video &amp; first caption line)</label>
+        {% for h in (c.captions.hooks or []) %}
+        <label class="opt"><input type="radio" name="hook_pick" value="{{ h }}" {{ 'checked' if h == c.hook }}
+               onchange="this.form.hook.value=this.value"> {{ h }}</label>
+        {% endfor %}
+        <input type="text" name="hook" value="{{ c.hook or '' }}">
+      </div>
+      <div class="cols">
+        <div>
+          <label>YouTube title</label><input type="text" name="title" value="{{ c.title or '' }}">
+          <label>Description</label><textarea name="description">{{ c.description or '' }}</textarea>
+          <label>3 hashtags</label><input type="text" name="hashtags" value="{{ c.hashtags|join(' ') }}">
+          <div class="row" style="margin-top:10px">
+            <button>Save text</button>
+            <button formaction="/clip/{{ c.id }}/new-captions">New caption ideas</button>
+          </div>
+          <p class="meta">Saving text changes captions only. If you change the hook, press Re-render so the video text updates.</p>
+        </div>
+        <div>
+          <label>Caption to paste (TikTok / Instagram)</label>
+          <div class="copybox" id="cap{{ c.id }}">{{ c.caption_text }}</div>
+          <div class="row" style="margin-top:8px"><button type="button" onclick="copyCap({{ c.id }}, this)">Copy caption</button></div>
+        </div>
+      </div>
+    </form>
+
+    <div class="cols">
+      <form method="post" action="/clip/{{ c.id }}/thumbnail">
+        <label>Thumbnail</label>
+        {% if c.thumb_path %}<img class="thumb" src="/media/{{ c.id }}/thumb?v={{ c.thumb_word }}" alt="thumbnail">{% endif %}
+        <div class="row" style="margin-top:8px">
+          {% for w in (c.captions.thumbnail_words or []) %}
+          <button name="word" value="{{ w }}">{{ w }}</button>
+          {% endfor %}
+        </div>
+        <div class="frames">
+          {% for f in c.thumb_options %}
+          <label><input type="radio" name="frame" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 == 1 }}><img src="/media/{{ c.id }}/frame{{ loop.index0 }}" alt=""></label>
+          {% endfor %}
+        </div>
+        <div class="row" style="margin-top:8px"><input type="text" name="word" placeholder="or type one word" style="max-width:220px"><button>Make thumbnail</button></div>
+      </form>
+
+      <form method="post" action="/clip/{{ c.id }}/rerender">
+        <label>Color grade strength</label>
+        {% if c.kind == 'short' and c.master_path %}
+        <div class="compare" id="cmp{{ c.id }}">
+          <img src="/compare/{{ c.id }}/before.jpg" alt="before">
+          <img class="after" src="/compare/{{ c.id }}/after.jpg?strength={{ c.grade_strength or 1 }}" alt="after">
+        </div>
+        <input type="range" min="0" max="100" value="50" style="width:100%;max-width:480px" oninput="document.querySelector('#cmp{{ c.id }} .after').style.clipPath='inset(0 0 0 '+this.value+'%)'">
+        <p class="meta">Drag: left = original Flat footage, right = graded.</p>
+        {% endif %}
+        <div class="row">
+          <input type="range" name="strength" min="0" max="1" step="0.05" value="{{ c.grade_strength or 1 }}" oninput="this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+          <span>{{ ((c.grade_strength or 1) * 100)|int }}%</span>
+        </div>
+        <label class="opt" style="text-transform:none"><input type="checkbox" name="music" value="1" {{ 'checked' if c.music }}> Add music under the exhaust (from your music folder)</label>
+        <div class="row" style="margin-top:8px"><button>Re-render</button></div>
+      </form>
+    </div>
+
+    <div class="row" style="margin-top:22px; border-top:1px solid var(--line); padding-top:16px">
+      <form method="post" action="/clip/{{ c.id }}/approve"><button class="primary" {{ 'disabled' if c.job or not c.master_path }}>
+        {% if yt_mode == 'api' %}Approve → YouTube (private){% else %}Approve → ready to post{% endif %}{% if c.kind == 'short' %} + phone package{% endif %}</button></form>
+      <form method="post" action="/clip/{{ c.id }}/reject"><button class="danger">Reject</button></form>
+    </div>
+  </div>
+</section>
+{% endfor %}
+
+{% if done %}
+<h2>Approved</h2>
+{% for c in done %}
+<section class="card" style="grid-template-columns:1fr">
+  <div class="row" style="justify-content:space-between">
+    <div><strong>{{ c.hook }}</strong> <span class="meta">· {{ c.kind }} · {{ (c.posted_at or '')[:10] }}</span></div>
+    <div class="row">
+      {% if c.youtube_id %}<a style="color:var(--accent)" href="https://studio.youtube.com/video/{{ c.youtube_id }}/edit" target="_blank">Open in YouTube Studio → set Public</a>{% endif %}
+      {% if c.kind == 'short' %}<button type="button" onclick="copyCap({{ c.id }}, this)">Copy caption</button>{% endif %}
+    </div>
+  </div>
+  {% if c.error %}<div class="err">{{ c.error }}</div>{% endif %}
+  {% if not c.youtube_id %}
+  <div class="cols">
+    <div>
+      <label>YouTube: 1. open Studio → Create → Upload, drag in this file</label>
+      <div class="copybox" style="font-size:13px">{{ c.master_path }}</div>
+      <div class="row" style="margin-top:6px">
+        <a style="color:var(--accent)" href="https://studio.youtube.com" target="_blank">Open YouTube Studio →</a>
+        <span class="meta">Thumbnail: {{ c.thumb_path }}</span>
+      </div>
+    </div>
+    <div>
+      <label>2. paste title and description, choose visibility</label>
+      <div class="copybox" id="ytt{{ c.id }}">{{ c.title }}</div>
+      <div class="row" style="margin:6px 0"><button type="button" onclick="copyEl('ytt{{ c.id }}', this)">Copy title</button></div>
+      <div class="copybox" id="ytd{{ c.id }}">{{ c.yt_description }}</div>
+      <div class="row" style="margin-top:6px"><button type="button" onclick="copyEl('ytd{{ c.id }}', this)">Copy description</button></div>
+    </div>
+  </div>
+  {% endif %}
+  {% if c.kind == 'short' %}<div class="copybox" id="cap{{ c.id }}" style="display:none">{{ c.caption_text }}</div>
+  <p class="meta">TikTok / Instagram package (video + cover + caption) is in: {{ handoff_dir }}</p>{% endif %}
+</section>
+{% endfor %}
+{% endif %}
+</main>
+<script>
+function copyCap(id, btn) { copyEl('cap' + id, btn); }
+function copyEl(elId, btn) {
+  const t = document.getElementById(elId).innerText;
+  navigator.clipboard.writeText(t).then(() => { const o = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = o, 1500); });
+}
+</script>
+</body>
+</html>
