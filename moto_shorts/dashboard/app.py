@@ -66,6 +66,8 @@ def media(clip_id: int, what: str):
         raise HTTPException(404)
     if what == "preview":
         p = clip["social_path"] or clip["master_path"]
+    elif what == "instagram":
+        p = clip["instagram_path"]
     elif what == "thumb":
         p = clip["thumb_path"]
     elif what.startswith("frame"):

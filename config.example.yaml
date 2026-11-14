@@ -13,7 +13,7 @@ gopro:
   only_videos_newer_than_days: 30
 
 daily:
-  shorts_per_day: 3
+  shorts_per_day: 1
   short_min_seconds: 9
   short_max_seconds: 20
   run_time: "06:15"             # used by scripts/install_windows_task.ps1
@@ -54,6 +54,12 @@ captions:
     mid: ["#cfmoto", "#advriding", "#enduro", "#dualsport"]
     niche: ["#ibex450", "#450mt", "#cfmoto450mt", "#rawsound", "#motoasmr"]
   show_hook_on_video: true      # draw the chosen hook as text for the first seconds
+
+instagram:
+  # rotated: full horizontal frame turned 90 degrees inside a vertical video (viewer turns the
+  #          phone) - no blur, full 1080p detail. blurred: same layout as TikTok/YouTube.
+  layout: rotated
+  rotate: clockwise             # clockwise | counterclockwise
 
 thumbnails:
   font: ./fonts/Cinzel-Regular.ttf   # downloaded by setup; falls back to a system font

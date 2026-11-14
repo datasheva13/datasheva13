@@ -139,6 +139,19 @@ def test_render_short_end_to_end(tmp_path):
     assert out.strip() == "90,160"
 
 
+def test_instagram_rotated_is_vertical_full_frame(tmp_path):
+    from moto_shorts.edit.render import RenderSettings, render_instagram_rotated
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=3",
+                    "-f", "lavfi", "-i", "sine=f=120:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(src)], check=True)
+    s = RenderSettings(encoder="libx264", social_size=(180, 320), bitrate_social="1M")
+    o = render_instagram_rotated(src, 0.2, 2.0, tmp_path / "ig.mp4", s, Grade())
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                          "stream=width,height", "-of", "csv=p=0", str(o)], capture_output=True, text=True).stdout
+    assert out.strip() == "180,320"
+
+
 def test_vertical_graph_labels():
     g = vertical_graph(2160, 3840, 12, Grade())
     assert "[vout]" in g and "overlay" in g and "gblur" in g and "crop=2160:1212" in g

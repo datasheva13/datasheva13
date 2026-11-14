@@ -51,20 +51,34 @@ def vertical_graph(
         f"[bg][fg]overlay=x=0:y=(H-h)/2:shortest=1,format=yuv420p10le[vbase]",
     ]
     if hook_textfile and font:
-        size = int(out_w * 0.058)
-        y = int(out_h * 0.22)
-        fade_in, fade_out = 0.35, 0.5
-        alpha = (f"if(lt(t,{fade_in}),t/{fade_in},if(lt(t,{hook_seconds - fade_out}),1,"
-                 f"max(0,({hook_seconds}-t)/{fade_out})))")
-        g.append(
-            f"[vbase]drawtext=fontfile='{_esc_path(font)}':textfile='{_esc_path(hook_textfile)}':"
-            f"fontsize={size}:fontcolor=white:alpha='{alpha}':x=(w-text_w)/2:y={y}:"
-            f"shadowcolor=black@0.45:shadowx=0:shadowy={max(2, size // 18)}:"
-            f"enable='lt(t,{hook_seconds})'[vout]"
-        )
+        g.append(f"[vbase]{hook_drawtext(hook_textfile, font, int(out_w * 0.058), int(out_h * 0.22), hook_seconds)}[vout]")
     else:
         g.append("[vbase]null[vout]")
     return ";".join(g)
+
+
+def hook_drawtext(textfile: str | Path, font: str | Path, size: int, y: int, hook_seconds: float = 2.8) -> str:
+    """Hook text that fades in/out over the first seconds (filter only, no labels)."""
+    fade_in, fade_out = 0.35, 0.5
+    alpha = (f"if(lt(t,{fade_in}),t/{fade_in},if(lt(t,{hook_seconds - fade_out}),1,"
+             f"max(0,({hook_seconds}-t)/{fade_out})))")
+    return (f"drawtext=fontfile='{_esc_path(font)}':textfile='{_esc_path(textfile)}':"
+            f"fontsize={size}:fontcolor=white:alpha='{alpha}':x=(w-text_w)/2:y={y}:"
+            f"shadowcolor=black@0.45:shadowx=0:shadowy={max(2, size // 18)}:"
+            f"enable='lt(t,{hook_seconds})'")
+
+
+def rotated_graph(land_w: int, land_h: int, grade: Grade, norm: ClipNormalization | None, fps: float | None,
+                  direction: str = "clockwise", hook_textfile: str | Path | None = None,
+                  font: str | Path | None = None) -> str:
+    """Instagram "turn your phone" layout: the full 16:9 frame (no crop, no blur), hook drawn
+    upright for landscape viewing, then rotated 90 degrees into a 9:16 file. Output label: [vout]."""
+    chain = horizontal_segment_chain(land_w, land_h, grade, norm, fps)
+    hook = ""
+    if hook_textfile and font:
+        hook = "," + hook_drawtext(hook_textfile, font, int(land_h * 0.075), int(land_h * 0.14))
+    transpose = "transpose=clock" if direction == "clockwise" else "transpose=cclock"
+    return f"[0:v]{chain}{hook},{transpose},format=yuv420p[vout]"
 
 
 def horizontal_segment_chain(out_w: int, out_h: int, grade: Grade, norm: ClipNormalization | None,

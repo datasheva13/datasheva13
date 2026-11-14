@@ -75,6 +75,7 @@
     <p class="meta">
       <span class="pill">{{ 'LONG VIDEO' if c.kind == 'long' else 'SHORT' }}</span>
       {{ (c.duration // 60)|int }}:{{ '%02d'|format((c.duration % 60)|int) }} · score {{ '%.2f'|format(c.score or 0) }}
+      {% if c.instagram_path and c.instagram_path != c.social_path %}<br><a style="color:var(--accent)" href="/media/{{ c.id }}/instagram" target="_blank">Instagram version (turn-your-phone) ↗</a>{% endif %}
       {% if c.job %}<br><span class="job">⏳ {{ c.job }}…</span>{% endif %}
     </p>
     {% if c.status == 'failed' or c.error %}<div class="err">{{ c.error }}</div>{% endif %}

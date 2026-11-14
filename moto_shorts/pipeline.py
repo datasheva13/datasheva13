@@ -19,8 +19,8 @@ from .captions.generate import CaptionSet, fallback_captions, generate_captions
 from .config import Config
 from .db import DB, now
 from .edit.grade import Grade
-from .edit.render import (RenderSettings, Segment, normalization_for, render_long, render_short,
-                          render_social)
+from .edit.render import (RenderSettings, Segment, normalization_for, render_instagram_rotated, render_long,
+                          render_short, render_social)
 from .ingest.gopro_cloud import GoProCloud, TokenExpired, inbox_files, move_into
 from .thumbnails.make import grab_graded_frames, make_thumbnail
 
@@ -217,12 +217,19 @@ class Pipeline:
             settings = RenderSettings.from_config(self.cfg)
             norm = normalization_for(src, start, dur, grade)
             log(f"rendering short {clip_id} ({settings.encoder}) ...")
+            music = self._music(bool(clip["music"]))
             master = render_short(src, start, dur, out_dir / "youtube_short_4k.mp4", settings, grade, norm,
-                                  hook_file, font, self._music(bool(clip["music"])))
+                                  hook_file, font, music)
             social = render_social(master, out_dir / "social_1080.mp4", settings)
+            ig = social
+            icfg = self.cfg.get("instagram", {}) or {}
+            if icfg.get("layout", "rotated") == "rotated":
+                ig = render_instagram_rotated(src, start, dur, out_dir / "instagram_rotated_1080.mp4", settings,
+                                              grade, norm, hook_file, font, icfg.get("rotate", "clockwise"), music)
             thumbs = self._thumbs(frames, clip["thumb_word"] or "RIDE", out_dir, vertical=False)
             self.db.update_clip(clip_id, status="rendered", master_path=str(master), social_path=str(social),
-                                thumb_options=[str(f) for f in frames], thumb_path=str(thumbs), error=None)
+                                instagram_path=str(ig), thumb_options=[str(f) for f in frames],
+                                thumb_path=str(thumbs), error=None)
         except Exception as e:
             log(f"short {clip_id} failed: {e}")
             self.db.update_clip(clip_id, status="failed", error=f"{e}\n{traceback.format_exc()[-1500:]}")
@@ -337,9 +344,12 @@ class Pipeline:
             except Exception as e:
                 result["youtube_error"] = str(e)
         if clip["kind"] == "short" and clip["social_path"]:
+            icfg = self.cfg.get("instagram", {}) or {}
             folder = handoff(self.cfg.path("paths", "handoff_dir"), clip_id, Path(clip["social_path"]),
                              Path(clip["thumb_path"]) if clip["thumb_path"] else None,
-                             clip["hook"] or "", clip["description"] or "", tags)
+                             clip["hook"] or "", clip["description"] or "", tags,
+                             Path(clip["instagram_path"]) if clip["instagram_path"] else None,
+                             icfg.get("rotate", "clockwise"))
             result["handoff"] = str(folder)
         status = "uploaded" if "youtube_id" in result else "approved"
         self.db.update_clip(clip_id, status=status, posted_at=now())

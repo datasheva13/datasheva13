@@ -5,7 +5,9 @@ Turns raw GoPro off-road POV footage into cinematic, raw-sound shorts, every day
 **What it does each morning**
 1. Downloads new rides from GoPro Cloud (or picks up files you drop in the `inbox` folder).
 2. Finds the best moments: exhaust sound (revs, throttle hits, climbs) + scenery (open views, light, variety) + GPS (speed, climbs). It never repeats a moment or similar scenery on consecutive days.
-3. Makes **3 shorts**: 9:16 vertical, sharp footage centered on a moving blurred copy of itself, slow subtle push-in, natural cinematic grade for HERO11 Flat footage, raw exhaust audio.
+3. Makes **1 short a day** (`daily.shorts_per_day`), with a natural cinematic grade for HERO11 Flat footage and raw exhaust audio:
+   - **YouTube & TikTok:** 9:16 vertical, sharp footage centered on a moving blurred copy of itself, slow subtle push-in.
+   - **Instagram:** the full horizontal frame turned sideways in a vertical video (viewers turn their phone): no blur, full 1080p detail. Change in `instagram:` settings.
 4. Writes moody hooks, title, description, **3 hashtags** and a **one-word thumbnail**.
 5. When enough good footage has piled up, builds a **long 16:9 YouTube video** with chapters.
 6. You review everything in a dashboard, tweak anything, click **Approve**, then post (about 30 seconds per platform).
@@ -41,7 +43,7 @@ Run the check again any time:
 ```
 
 ### 4. Phone folder for TikTok / Instagram
-Install **Google Drive for desktop** (or iCloud/OneDrive), then in `config.yaml` set `handoff_dir:` to a folder inside it, e.g. `G:\My Drive\MotoShorts`. Every approved short lands there as `video.mp4` + `cover.jpg` + `caption.txt`, ready on your phone.
+Install **Google Drive for desktop** (or iCloud/OneDrive), then in `config.yaml` set `handoff_dir:` to a folder inside it, e.g. `G:\My Drive\MotoShorts`. Every approved short lands there as `tiktok.mp4` + `instagram.mp4` + covers + `caption.txt`, ready on your phone.
 
 ### 5. Turn on the daily run
 ```
@@ -55,7 +57,7 @@ For each video you can pick or edit the hook, title, description and hashtags, p
 
 Click **Approve**, then post:
 - **YouTube:** the dashboard shows the 4K file and *Copy title* / *Copy description* buttons. Studio → Create → Upload → drag it in → paste → set visibility.
-- **TikTok / Instagram:** on your phone, open the package in your Drive folder → upload `video.mp4` → paste `caption.txt`. Optionally set `cover.jpg` as the cover.
+- **TikTok / Instagram:** on your phone, open the package in your Drive folder → upload `tiktok.mp4` (TikTok) or `instagram.mp4` (Instagram) → paste `caption.txt`. Optional covers: `cover.jpg` / `cover_instagram.jpg`.
 
 ---
 

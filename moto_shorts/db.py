@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS clips (
   status TEXT DEFAULT 'pending',      -- pending | rendered | approved | posted | rejected | failed
   master_path TEXT,
   social_path TEXT,
+  instagram_path TEXT,
   thumb_options TEXT,                 -- json list of frame paths
   thumb_path TEXT,
   captions TEXT,                      -- json from captions.generate
@@ -60,6 +61,9 @@ class DB:
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(clips)")}
+        if "instagram_path" not in cols:                    # upgrade older databases
+            self.conn.execute("ALTER TABLE clips ADD COLUMN instagram_path TEXT")
         self.conn.commit()
 
     # sources -------------------------------------------------------------

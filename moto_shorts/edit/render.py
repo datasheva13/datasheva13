@@ -10,7 +10,7 @@ import numpy as np
 
 from .. import ffmpeg as ff
 from .grade import ClipNormalization, Grade, measure_normalization
-from .reframe import audio_chain, horizontal_segment_chain, vertical_graph
+from .reframe import audio_chain, horizontal_segment_chain, rotated_graph, vertical_graph
 
 
 def sample_frames(src: str | Path, times: list[float], size: tuple[int, int] = (192, 108)) -> list[np.ndarray]:
@@ -116,6 +116,29 @@ def render_social(master: str | Path, out: str | Path, settings: RenderSettings)
             "-c:v", "libx264", "-preset", "slow", "-b:v", settings.bitrate_social,
             "-maxrate", settings.bitrate_social, "-bufsize", "50M", "-profile:v", "high",
             *ff.COLOR_TAGS, "-c:a", "copy", "-movflags", "+faststart", str(out)])
+    return Path(out)
+
+
+def render_instagram_rotated(src: str | Path, start: float, duration: float, out: str | Path,
+                             settings: RenderSettings, grade: Grade, norm: ClipNormalization | None = None,
+                             hook_textfile: str | Path | None = None, font: str | Path | None = None,
+                             direction: str = "clockwise", music: Path | None = None) -> Path:
+    """Full-detail 1920x1080 landscape frame rotated into a 1080x1920 file (viewer turns the phone)."""
+    sw, sh = settings.social_size                      # 1080 x 1920 -> landscape 1920 x 1080
+    vgraph = rotated_graph(sh, sw, grade, norm, settings.fps, direction, hook_textfile, font)
+    music_args, music_path = _music_inputs(music, duration)
+    a = audio_chain(duration, settings.audio_fade)
+    if music_path:
+        mfade = max(duration - 1.2, 0)
+        agraph = (f"[0:a]{a}[ex];[1:a]volume={settings.music_volume_db}dB,afade=t=in:d=1.0,"
+                  f"afade=t=out:st={mfade:.2f}:d=1.2[mu];[ex][mu]amix=inputs=2:duration=first:normalize=0[aout]")
+    else:
+        agraph = f"[0:a]{a}[aout]"
+    ff.run(["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src), *music_args,
+            "-filter_complex", f"{vgraph};{agraph}", "-map", "[vout]", "-map", "[aout]",
+            "-c:v", "libx264", "-preset", "slow", "-b:v", settings.bitrate_social,
+            "-maxrate", settings.bitrate_social, "-bufsize", "50M", "-profile:v", "high",
+            *ff.COLOR_TAGS, *ff.AUDIO_ARGS, "-movflags", "+faststart", str(out)])
     return Path(out)
 
 
