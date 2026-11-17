@@ -4,17 +4,20 @@ paths:
   work_dir: ./work              # downloads, proxies, renders, database
   inbox_dir: ./inbox            # fallback: drop GoPro files here by hand
   handoff_dir: ./handoff        # point this at a Google Drive / iCloud folder your phone can see
-  keep_raw_days: 21             # raw files are deleted after this (originals stay in GoPro Cloud
-                                # and are re-downloaded automatically if ever needed again)
+  cleanup_days: 30              # each run deletes downloaded GoPro files and working files older than
+                                # this (originals stay in GoPro Cloud and are re-downloaded if needed).
+                                # Videos waiting for your review are never deleted.
+  timezone: America/Denver      # Mountain time (MST/MDT). Arizona: America/Phoenix
 
 gopro:
   enabled: true                 # unofficial GoPro Cloud API (token in .env: GOPRO_ACCESS_TOKEN)
-  max_downloads_per_run: 10
-  only_videos_newer_than_days: 30
+  max_downloads_per_run: 3      # half newest rides, half random older ones from your whole library
+  only_videos_newer_than_days: 0   # 0 = whole library (old footage is used too)
+  max_pages: 40                 # 50 videos per page
 
 daily:
-  shorts_per_day: 1
-  short_min_seconds: 9
+  shorts_per_day: 2
+  short_min_seconds: 10
   short_max_seconds: 20
   run_time: "06:15"             # used by scripts/install_windows_task.ps1
 
@@ -56,9 +59,9 @@ captions:
   show_hook_on_video: true      # draw the chosen hook as text for the first seconds
 
 instagram:
-  # rotated: full horizontal frame turned 90 degrees inside a vertical video (viewer turns the
-  #          phone) - no blur, full 1080p detail. blurred: same layout as TikTok/YouTube.
-  layout: rotated
+  # vertical: same blurred-background layout as TikTok/YouTube (1080x1920, high bitrate H.264,
+  #           source frame rate kept). rotated: horizontal frame turned sideways (viewer turns phone).
+  layout: vertical
   rotate: clockwise             # clockwise | counterclockwise
 
 thumbnails:

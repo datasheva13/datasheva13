@@ -24,6 +24,7 @@ def vertical_graph(
     hook_textfile: str | Path | None = None,
     font: str | Path | None = None,
     hook_seconds: float = 2.8,
+    vin: str = "[0:v]",
 ) -> str:
     """16:9 source -> 9:16 frame: sharp graded footage centered on a blurred, darker copy.
 
@@ -39,7 +40,7 @@ def vertical_graph(
     d = max(duration, 0.1)
 
     g = [
-        f"[0:v]{pre}scale={work_w}:-2:flags=lanczos,{chain},split=2[fgsrc][bgsrc]",
+        f"{vin}{pre}scale={work_w}:-2:flags=lanczos,{chain},split=2[fgsrc][bgsrc]",
         # background: cheap blur at quarter res, then upscale; dimmed so the subject pops
         f"[bgsrc]scale={out_w // 4}:{out_h // 4}:force_original_aspect_ratio=increase,"
         f"crop={out_w // 4}:{out_h // 4},gblur=sigma={blur_sigma / 4:.2f},"
@@ -51,10 +52,56 @@ def vertical_graph(
         f"[bg][fg]overlay=x=0:y=(H-h)/2:shortest=1,format=yuv420p10le[vbase]",
     ]
     if hook_textfile and font:
-        g.append(f"[vbase]{hook_drawtext(hook_textfile, font, int(out_w * 0.058), int(out_h * 0.22), hook_seconds)}[vout]")
+        lines = hook_lines_filter(hook_textfile, font, out_w, int(out_w * 0.058), int(out_h * 0.22), hook_seconds)
+        g.append(f"[vbase]{lines}[vout]")
     else:
         g.append("[vbase]null[vout]")
     return ";".join(g)
+
+
+def fit_hook(text: str, font: str | Path, frame_w: int, base_size: int, max_frac: float = 0.84,
+             max_lines: int = 3) -> tuple[list[str], int]:
+    """Wrap the hook into centered lines that never cross the frame edges.
+    Tries the base size first, then shrinks (down to 55%) until it fits in max_lines."""
+    from PIL import ImageFont
+
+    words = text.split()
+    max_w = frame_w * max_frac
+    size = base_size
+    while True:
+        f = ImageFont.truetype(str(font), size)
+        width = lambda s: f.getbbox(s)[2] - f.getbbox(s)[0] if s else 0  # noqa: E731
+        lines, cur = [], ""
+        for w in words:
+            trial = f"{cur} {w}".strip()
+            if width(trial) <= max_w or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+        fits = all(width(l) <= max_w for l in lines) and len(lines) <= max_lines
+        if fits or size <= base_size * 0.55:
+            return lines, size
+        size = int(size * 0.92)
+
+
+def hook_lines_filter(textfile: str | Path, font: str | Path, frame_w: int, base_size: int, y_top: int,
+                      hook_seconds: float = 2.8) -> str:
+    """Hook as 1-3 individually centered lines (one drawtext per line). Writes line files
+    next to `textfile` (avoids FFmpeg text escaping problems with quotes, colons, emojis)."""
+    textfile = Path(textfile)
+    text = " ".join(textfile.read_text(encoding="utf-8").split())
+    lines, size = fit_hook(text, font, frame_w, base_size)
+    if len(lines) > 1:            # grow upward so longer hooks never run into the footage
+        y_top = max(int(y_top - (len(lines) - 1) * size * 1.25 * 0.6), int(size * 0.8))
+    parts = []
+    for i, line in enumerate(lines):
+        lf = textfile.with_name(f"{textfile.stem}_line{i}.txt")
+        lf.write_text(line, encoding="utf-8")
+        parts.append(hook_drawtext(lf, font, size, int(y_top + i * size * 1.25), hook_seconds))
+    return ",".join(parts) if parts else "null"
 
 
 def hook_drawtext(textfile: str | Path, font: str | Path, size: int, y: int, hook_seconds: float = 2.8) -> str:
@@ -76,7 +123,7 @@ def rotated_graph(land_w: int, land_h: int, grade: Grade, norm: ClipNormalizatio
     chain = horizontal_segment_chain(land_w, land_h, grade, norm, fps)
     hook = ""
     if hook_textfile and font:
-        hook = "," + hook_drawtext(hook_textfile, font, int(land_h * 0.075), int(land_h * 0.14))
+        hook = "," + hook_lines_filter(hook_textfile, font, land_w, int(land_h * 0.075), int(land_h * 0.14))
     transpose = "transpose=clock" if direction == "clockwise" else "transpose=cclock"
     return f"[0:v]{chain}{hook},{transpose},format=yuv420p[vout]"
 
@@ -91,6 +138,8 @@ def horizontal_segment_chain(out_w: int, out_h: int, grade: Grade, norm: ClipNor
 
 def audio_chain(duration: float, fade: float = 0.35, loudness: float = -14.0) -> str:
     """Raw exhaust audio: gentle fades, platform loudness (dynamics kept: LRA 11)."""
+    norm = f"loudnorm=I={loudness}:TP=-1.0:LRA=11"
+    if fade <= 0:
+        return norm
     out_start = max(duration - fade, 0)
-    return (f"afade=t=in:st=0:d={fade},afade=t=out:st={out_start:.3f}:d={fade},"
-            f"loudnorm=I={loudness}:TP=-1.0:LRA=11")
+    return f"afade=t=in:st=0:d={fade},afade=t=out:st={out_start:.3f}:d={fade},{norm}"

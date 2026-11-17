@@ -39,8 +39,9 @@ class GoProCloud:
         r.raise_for_status()
         return r.json()
 
-    def list_videos(self, newer_than_days: int = 30, max_pages: int = 20) -> list[dict]:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=newer_than_days)
+    def list_videos(self, newer_than_days: int = 0, max_pages: int = 40) -> list[dict]:
+        """All ready videos in the library (newer_than_days <= 0 means no age limit)."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=newer_than_days)) if newer_than_days > 0 else None
         out: list[dict] = []
         for page in range(1, max_pages + 1):
             data = self._get("/media/search", fields=FIELDS, order_by="captured_at", per_page=50,
@@ -48,7 +49,7 @@ class GoProCloud:
             items = data.get("_embedded", {}).get("media", [])
             for m in items:
                 cap = m.get("captured_at")
-                if cap and datetime.fromisoformat(cap.replace("Z", "+00:00")) < cutoff:
+                if cutoff and cap and datetime.fromisoformat(cap.replace("Z", "+00:00")) < cutoff:
                     return out
                 if m.get("type") == "Video" and m.get("ready_to_view", "ready") == "ready":
                     out.append(m)

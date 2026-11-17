@@ -119,7 +119,9 @@ def test_db_used_ranges(tmp_path):
     c = db.add_clip("short", sid, 10, 15, 0.5, np.ones(4))
     db.add_clip("long", None, 0, 30, 0.5, None, [{"source_id": sid, "start": 50, "duration": 30}])
     assert sorted(db.used_ranges()[sid]) == [(10, 25), (50, 80)]
-    db.update_clip(c, status="rejected")
+    db.update_clip(c, status="rejected")               # rejected moments stay blocked forever
+    assert sorted(db.used_ranges()[sid]) == [(10, 25), (50, 80)]
+    db.update_clip(c, status="failed")                 # failed renders free the moment again
     assert db.used_ranges()[sid] == [(50, 80)]
 
 
@@ -155,3 +157,94 @@ def test_instagram_rotated_is_vertical_full_frame(tmp_path):
 def test_vertical_graph_labels():
     g = vertical_graph(2160, 3840, 12, Grade())
     assert "[vout]" in g and "overlay" in g and "gblur" in g and "crop=2160:1212" in g
+
+
+# ---------------------------------------------------------------- new behaviour
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def test_hook_always_fits_inside_frame():
+    from PIL import ImageFont
+    from moto_shorts.edit.reframe import fit_hook
+    lines, size = fit_hook("Nobody followed me past this point and I never wanted them to anyway", FONT, 2160, 125)
+    f = ImageFont.truetype(FONT, size)
+    assert 1 < len(lines) <= 3
+    assert all(f.getbbox(l)[2] - f.getbbox(l)[0] <= 2160 * 0.84 for l in lines)
+
+
+def test_loop_render_keeps_duration(tmp_path):
+    from moto_shorts.edit.render import RenderSettings, render_short
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=8",
+                    "-f", "lavfi", "-i", "sine=f=120:d=8", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(src)], check=True)
+    hook = tmp_path / "hook.txt"
+    hook.write_text("The trail ended. The throttle didn't.")
+    s = RenderSettings(encoder="libx264", short_size=(180, 320), bitrate_master="2M")
+    m = render_short(src, 1.0, 5.0, tmp_path / "m.mp4", s, Grade(), None, hook, FONT, loop_split=3.5)
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                str(m)], capture_output=True, text=True).stdout)
+    assert abs(dur - 5.0) < 0.2
+
+
+def test_download_order_mixes_new_and_old():
+    from moto_shorts.pipeline import Pipeline
+    media = [{"id": str(i), "captured_at": f"2026-{(i % 12) + 1:02d}-01"} for i in range(40)]
+    picks = Pipeline._download_order(media, 4)
+    newest = sorted(media, key=lambda m: m["captured_at"], reverse=True)
+    assert len(picks) == 4 and picks[0] == newest[0] and len({p["id"] for p in picks}) == 4
+
+
+def test_bike_factors_penalize_no_bike():
+    from moto_shorts.analyze.bikecheck import per_second_factors
+    check = {"times": [5, 15], "views": ["bike_visible", "windshield_only"], "colors": [5, 1]}
+    vis, col = per_second_factors(check, 20)
+    assert vis[2] == 1.0 and vis[18] < 0.5 and col[2] == 1.0 and col[18] == 0.0
+
+
+def test_captions_parse_and_avoid_history(monkeypatch, tmp_path):
+    import json as _json
+    import anthropic
+    from moto_shorts.captions import generate as g
+
+    reply = {"scene": "ridge at dusk", "hooks": ["Old hook", "A", "B", "C", "D", "E"], "title": "T",
+             "description": "D", "hashtags": ["#offroad", "#cfmoto", "#450mt"],
+             "thumbnail_words": ["EMBER", "ascent", "Hollow", "RIDGE", "DUSK", "VEIL"]}
+
+    class Block:
+        type = "text"
+        text = _json.dumps(reply)
+
+    class Resp:
+        stop_reason = "end_turn"
+        content = [Block()]
+
+    sent = {}
+
+    class Msgs:
+        def create(self, **kw):
+            sent.update(kw)
+            return Resp()
+
+    class Client:
+        def __init__(self, *a, **k):
+            self.beta = type("B", (), {"messages": Msgs()})()
+
+    monkeypatch.setattr(anthropic, "Anthropic", Client)
+    from PIL import Image
+    big = tmp_path / "f.jpg"
+    Image.new("RGB", (3840, 2160), (90, 120, 80)).save(big)
+    cfg = {"captions": {"model": "claude-opus-5-5", "tone": "moody", "bike": "Ibex", "hashtag_pool": POOL}}
+    caps = g.generate_captions(cfg, [big], {"duration_s": 15}, "short",
+                               {"hooks": ["Old hook"], "titles": [], "words_used": ["ASCENT"]})
+    assert caps.note == ""
+    assert "Old hook" not in caps.hooks and len(caps.hooks) == 5
+    assert "ASCENT" not in caps.thumbnail_words and len(caps.thumbnail_words) == 5
+    img = sent["messages"][0]["content"][0]["source"]["data"]
+    assert len(img) < 1_000_000                       # downscaled before sending
+
+
+def test_fallback_is_flagged_and_varied():
+    from moto_shorts.captions.generate import fallback_captions
+    a = fallback_captions(POOL, reason="x", avoid_words=["ASCENT"])
+    assert a.note and len(a.hooks) == 5 and len(a.thumbnail_words) == 5 and "ASCENT" not in a.thumbnail_words

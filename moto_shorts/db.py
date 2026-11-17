@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS clips (
   segments TEXT,                      -- json for long videos
   score REAL,
   embedding BLOB,
-  status TEXT DEFAULT 'pending',      -- pending | rendered | approved | posted | rejected | failed
+  status TEXT DEFAULT 'pending',      -- pending | rendered | posted | rejected | archived | failed
   master_path TEXT,
   social_path TEXT,
   instagram_path TEXT,
@@ -61,16 +61,31 @@ class DB:
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
-        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(clips)")}
-        if "instagram_path" not in cols:                    # upgrade older databases
-            self.conn.execute("ALTER TABLE clips ADD COLUMN instagram_path TEXT")
+        self._migrate()
         self.conn.commit()
 
+    def _migrate(self) -> None:
+        """Add columns introduced after the first release (keeps existing data)."""
+        wanted = {
+            "clips": {"instagram_path": "TEXT", "captions_note": "TEXT", "origin": "TEXT DEFAULT 'auto'",
+                      "loop": "INTEGER DEFAULT 1", "handoff_path": "TEXT"},
+            "sources": {"bike_check": "TEXT", "usable": "INTEGER DEFAULT 1", "origin": "TEXT DEFAULT 'auto'"},
+        }
+        for table, cols in wanted.items():
+            have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for col, typ in cols.items():
+                if col not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        # old statuses -> new
+        self.conn.execute("UPDATE clips SET status='posted' WHERE status IN ('approved','uploaded')")
+
     # sources -------------------------------------------------------------
-    def add_source(self, gopro_id: str, filename: str, path: str, captured_at: str | None, duration: float) -> int:
+    def add_source(self, gopro_id: str, filename: str, path: str, captured_at: str | None, duration: float,
+                   origin: str = "auto") -> int:
         cur = self.conn.execute(
-            "INSERT OR IGNORE INTO sources (gopro_id, filename, path, captured_at, duration, added_at) VALUES (?,?,?,?,?,?)",
-            (gopro_id, filename, path, captured_at, duration, now()))
+            "INSERT OR IGNORE INTO sources (gopro_id, filename, path, captured_at, duration, added_at, origin) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (gopro_id, filename, path, captured_at, duration, now(), origin))
         self.conn.commit()
         if cur.lastrowid and cur.rowcount:
             return cur.lastrowid
@@ -120,9 +135,9 @@ class DB:
         self._update("clips", cid, fields)
 
     def used_ranges(self) -> dict[int, list[tuple[float, float]]]:
-        """Time ranges already turned into shorts or long videos (rejected ones are free again)."""
+        """Time ranges already used: pending, posted, archived AND rejected (never suggested again)."""
         out: dict[int, list[tuple[float, float]]] = {}
-        for r in self.conn.execute("SELECT * FROM clips WHERE status NOT IN ('rejected','failed')"):
+        for r in self.conn.execute("SELECT * FROM clips WHERE status != 'failed'"):
             if r["kind"] == "short" and r["source_id"] is not None:
                 out.setdefault(r["source_id"], []).append((r["start"], r["start"] + r["duration"]))
             elif r["segments"]:
@@ -132,9 +147,30 @@ class DB:
 
     def recent_embeddings(self, days: int = 10, limit: int = 30) -> list[np.ndarray]:
         rows = self.conn.execute(
-            "SELECT embedding FROM clips WHERE kind='short' AND embedding IS NOT NULL AND status NOT IN ('rejected','failed') "
+            "SELECT embedding FROM clips WHERE kind='short' AND embedding IS NOT NULL AND status NOT IN ('failed') "
             "ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [np.frombuffer(r["embedding"], dtype=np.float32) for r in rows]
+
+    def source_use_counts(self) -> dict[int, int]:
+        """How many shorts each source file has produced (used to alternate between rides)."""
+        rows = self.conn.execute("SELECT source_id, COUNT(*) n FROM clips WHERE kind='short' AND source_id IS NOT NULL "
+                                 "AND status != 'failed' GROUP BY source_id").fetchall()
+        return {r["source_id"]: r["n"] for r in rows}
+
+    def history(self, column: str, limit: int = 60) -> list[str]:
+        """Recent values of a text column (hooks, titles, thumbnail words) to avoid repeats."""
+        rows = self.conn.execute(f"SELECT {column} FROM clips WHERE {column} IS NOT NULL AND {column} != '' "
+                                 "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [r[column] for r in rows]
+
+    def posted_words(self) -> list[str]:
+        rows = self.conn.execute("SELECT thumb_word FROM clips WHERE status IN ('posted','archived') "
+                                 "AND thumb_word IS NOT NULL").fetchall()
+        return [r["thumb_word"] for r in rows]
+
+    def delete_clip_row(self, cid: int) -> None:
+        self.conn.execute("DELETE FROM clips WHERE id=?", (cid,))
+        self.conn.commit()
 
     def _update(self, table: str, rid: int, fields: dict) -> None:
         if not fields:

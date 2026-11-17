@@ -87,21 +87,40 @@ def render_short(
     hook_textfile: str | Path | None = None,
     font: str | Path | None = None,
     music: Path | None = None,
+    loop_split: float | None = None,
 ) -> Path:
-    """Render the 9:16 YouTube master (4K vertical, 10-bit HEVC, ~100 Mbps)."""
+    """Render the 9:16 YouTube master (4K vertical, 10-bit HEVC, ~100 Mbps).
+
+    loop_split (seconds into the source, inside the clip): play [split, end] first, then
+    cut to [start, split]. The video ends right where it began, so replays feel endless.
+    """
     out_w, out_h = settings.short_size
+    end = start + duration
+    if loop_split is not None and start + 1.0 < loop_split < end - 1.0:
+        inputs = ["-ss", f"{loop_split:.3f}", "-t", f"{end - loop_split:.3f}", "-i", str(src),
+                  "-ss", f"{start:.3f}", "-t", f"{loop_split - start:.3f}", "-i", str(src)]
+        # tiny audio fades at the internal cut so the jump doesn't click
+        b_len, a_len = end - loop_split, loop_split - start
+        pre = (f"[0:a]afade=t=out:st={max(b_len - 0.04, 0):.3f}:d=0.04[ab];"
+               f"[1:a]afade=t=in:d=0.04[aa];"
+               f"[0:v][ab][1:v][aa]concat=n=2:v=1:a=1[cv][ca];")
+        vin, ain, music_idx = "[cv]", "[ca]", 2
+    else:
+        inputs = ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src)]
+        pre, vin, ain, music_idx = "", "[0:v]", "[0:a]", 1
     vgraph = vertical_graph(out_w, out_h, duration, grade, norm, settings.push_in, settings.blur_sigma,
-                            settings.background_dim, settings.fps, hook_textfile, font)
+                            settings.background_dim, settings.fps, hook_textfile, font, vin=vin)
     music_args, music_path = _music_inputs(music, duration)
-    a = audio_chain(duration, settings.audio_fade)
+    # loop: no fade-in/out on the outer ends (they join seamlessly on replay)
+    a = audio_chain(duration, 0.0 if pre else settings.audio_fade)
     if music_path:
         mfade = max(duration - 1.2, 0)
-        agraph = (f"[0:a]{a}[ex];[1:a]volume={settings.music_volume_db}dB,afade=t=in:d=1.0,"
+        agraph = (f"{ain}{a}[ex];[{music_idx}:a]volume={settings.music_volume_db}dB,afade=t=in:d=1.0,"
                   f"afade=t=out:st={mfade:.2f}:d=1.2[mu];[ex][mu]amix=inputs=2:duration=first:normalize=0[aout]")
     else:
-        agraph = f"[0:a]{a}[aout]"
-    args = ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src), *music_args,
-            "-filter_complex", f"{vgraph};{agraph}", "-map", "[vout]", "-map", "[aout]",
+        agraph = f"{ain}{a}[aout]"
+    args = [*inputs, *music_args,
+            "-filter_complex", f"{pre}{vgraph};{agraph}", "-map", "[vout]", "-map", "[aout]",
             *ff.video_codec_args(settings.encoder, settings.bitrate_master), *ff.COLOR_TAGS, *ff.AUDIO_ARGS,
             "-movflags", "+faststart", str(out_master)]
     ff.run(args)
@@ -151,7 +170,8 @@ class Segment:
     title: str = ""
 
 
-def render_long(segments: list[Segment], out: str | Path, settings: RenderSettings, grade: Grade) -> tuple[Path, list[tuple[float, str]]]:
+def render_long(segments: list[Segment], out: str | Path, settings: RenderSettings, grade: Grade,
+                fades: bool = True) -> tuple[Path, list[tuple[float, str]]]:
     """16:9 long video: graded segments joined with tiny audio fades (no flashy transitions).
     Returns the output path and YouTube chapters [(start_seconds, title)]."""
     w, h = settings.long_size
@@ -170,7 +190,10 @@ def render_long(segments: list[Segment], out: str | Path, settings: RenderSettin
     n = len(segments)
     concat_in = "".join(f"[v{i}][a{i}]" for i in range(n))
     parts.append(f"{concat_in}concat=n={n}:v=1:a=1[vc][ac]")
-    parts.append(f"[vc]fade=t=in:d=1.0,fade=t=out:st={max(t - 1.5, 0):.3f}:d=1.5[vout]")
+    if fades:
+        parts.append(f"[vc]fade=t=in:d=1.0,fade=t=out:st={max(t - 1.5, 0):.3f}:d=1.5[vout]")
+    else:                                   # your own edit: colour grade only, nothing added
+        parts.append("[vc]null[vout]")
     parts.append("[ac]loudnorm=I=-14:TP=-1.0:LRA=11[aout]")
     ff.run(args + ["-filter_complex", ";".join(parts), "-map", "[vout]", "-map", "[aout]",
                    *ff.video_codec_args(settings.encoder, settings.bitrate_master), *ff.COLOR_TAGS,

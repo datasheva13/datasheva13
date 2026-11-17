@@ -3,14 +3,15 @@
 Turns raw GoPro off-road POV footage into cinematic, raw-sound shorts, every day.
 
 **What it does each morning**
-1. Downloads new rides from GoPro Cloud (or picks up files you drop in the `inbox` folder).
-2. Finds the best moments: exhaust sound (revs, throttle hits, climbs) + scenery (open views, light, variety) + GPS (speed, climbs). It never repeats a moment or similar scenery on consecutive days.
-3. Makes **1 short a day** (`daily.shorts_per_day`), with a natural cinematic grade for HERO11 Flat footage and raw exhaust audio:
-   - **YouTube & TikTok:** 9:16 vertical, sharp footage centered on a moving blurred copy of itself, slow subtle push-in.
-   - **Instagram:** the full horizontal frame turned sideways in a vertical video (viewers turn their phone): no blur, full 1080p detail. Change in `instagram:` settings.
-4. Writes moody hooks, title, description, **3 hashtags** and a **one-word thumbnail**.
-5. When enough good footage has piled up, builds a **long 16:9 YouTube video** with chapters.
-6. You review everything in a dashboard, tweak anything, click **Approve**, then post (about 30 seconds per platform).
+1. Cleans up: posted videos older than 7 days, and downloaded/working files older than 30 days (videos waiting for review are never deleted).
+2. Downloads rides from your **whole** GoPro Cloud library, half newest and half random older ones, so old footage gets used (or picks up files you drop in `inbox`).
+3. Skips anything that isn't a motorcycle ride (mountain biking etc.) and moments where no part of the bike is visible (Claude checks a few frames per video, about $0.02 each).
+4. Finds the best moments by exhaust sound, color, scenery and GPS, and alternates between rides. One video can give many shorts.
+5. Makes **2 shorts a day** as seamless loops: the clip's ending plays first, then it cuts to the beginning, so the replay joins up. Every platform gets the 9:16 blurred-background layout and a natural cinematic grade.
+6. Claude writes **5 hooks**, a title, a description, 3 hashtags and **5 thumbnail words** for every video, never repeating earlier ones.
+7. Builds a long 16:9 YouTube video once enough good footage has piled up.
+
+**Dashboard:** click a hook to put it on the video (or type your own), click a thumbnail word, trim the start/end, adjust the grade, then **Approve** (moves to POSTED for 7 days, then deleted) or **Reject** (deleted, never suggested again). Use **Upload** for your own edits: a short gets blur + grade + all exports, a long video gets the grade only.
 
 **Exports:** YouTube 4K (2160×3840 shorts / 3840×2160 long), 10-bit HEVC ~100 Mbps · Instagram/TikTok 1080×1920 high bitrate · no watermarks.
 
@@ -65,7 +66,7 @@ Click **Approve**, then post:
 ```
 .venv\Scripts\python tools\analyze_refs.py
 ```
-It measures the 3 reference videos (contrast, black level, tint, saturation, shot length) and writes `presets\reference_look.yaml`. To use it, set `style: preset: presets/reference_look.yaml` in `config.yaml`. Compare the result in the dashboard. Every number in the preset is readable and tweakable. The rule: subtle. If it looks "edited", lower it.
+By default it samples 8 recent videos from **ScramblerPOV** (or pass any channel or video links). It measures them (contrast, black level, tint, saturation, shot length) and writes `presets\reference_look.yaml`. To use it, set `style: preset: presets/reference_look.yaml` in `config.yaml`. Compare the result in the dashboard. Every number in the preset is readable and tweakable. The rule: subtle. If it looks "edited", lower it.
 
 ## Useful commands
 | Command | What it does |

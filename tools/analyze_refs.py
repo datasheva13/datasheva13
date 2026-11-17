@@ -1,8 +1,10 @@
 """Measure the look of reference videos and write a matching grade preset.
 
 Usage (on your computer, not in the cloud):
-    python tools/analyze_refs.py            # uses the 3 reference links below
-    python tools/analyze_refs.py URL@START ...   (START in seconds)
+    python tools/analyze_refs.py                                   # the default references below
+    python tools/analyze_refs.py URL@START ...                     # specific videos (START in seconds)
+    python tools/analyze_refs.py https://www.youtube.com/@ScramblerPOV/videos   # a whole channel:
+                                                                   # samples its 8 latest videos
 
 Downloads ~40 s of each video (from the timestamp you liked) with yt-dlp, samples
 frames, and measures: black level, highlight level, contrast, saturation, shadow and
@@ -24,11 +26,14 @@ sys.path.insert(0, str(ROOT))
 
 from moto_shorts.edit.grade import Grade  # noqa: E402
 
+CHANNEL_VIDEOS = 8
+
 REFERENCES = [
-    "https://www.youtube.com/watch?v=c7Dpmg-PI4c@132",
-    "https://www.youtube.com/watch?v=tFxxQcsjBO0@295",
-    "https://www.youtube.com/watch?v=0fMoZ0-cAY4@33",
+    "https://www.youtube.com/@ScramblerPOV/videos",     # the look to copy
 ]
+# earlier references (pass them explicitly to include them):
+#   https://www.youtube.com/watch?v=c7Dpmg-PI4c@132  https://www.youtube.com/watch?v=tFxxQcsjBO0@295
+#   https://www.youtube.com/watch?v=0fMoZ0-cAY4@33
 SECONDS = 40
 
 
@@ -97,21 +102,44 @@ def to_grade(m: dict, base: Grade) -> Grade:
     return g
 
 
+def expand(refs: list[str]) -> list[str]:
+    """Channel links (/@name or /@name/videos) -> their latest videos, sampled from 1:00 in."""
+    out = []
+    for ref in refs:
+        if "/@" in ref or "/channel/" in ref:
+            url = ref if ref.rstrip("/").endswith("/videos") else ref.rstrip("/") + "/videos"
+            ids = subprocess.run([sys.executable, "-m", "yt_dlp", "--flat-playlist", "--print", "id",
+                                  "--playlist-end", str(CHANNEL_VIDEOS), url],
+                                 capture_output=True, text=True).stdout.split()
+            out += [f"https://www.youtube.com/watch?v={i}@60" for i in ids]
+            print(f"{ref}: sampling {len(ids)} videos")
+        else:
+            out.append(ref)
+    return out
+
+
 def main(args: list[str]) -> None:
-    refs = args or REFERENCES
+    refs = expand(args or REFERENCES)
     work = Path(tempfile.gettempdir()) / "moto_refs"
     work.mkdir(exist_ok=True)
     stats, shots = [], []
     for ref in refs:
         url, _, start = ref.partition("@")
         print(f"Downloading {SECONDS}s of {url} from {start or 0}s ...")
-        p = download(url, int(start or 0), work)
+        try:
+            p = download(url, int(start or 0), work)
+        except subprocess.CalledProcessError:
+            print("  (could not download, skipped)")
+            continue
         m = measure(frames(p))
         s = shot_lengths(p)
         stats.append(m)
         shots.append(s)
         print(f"  black {m['black']:.3f}  white {m['white']:.3f}  contrast {m['contrast']:.3f}  "
               f"saturation {m['saturation']:.3f}  avg shot {s:.1f}s")
+    if not stats:
+        print("Nothing could be downloaded - check your internet connection / the links.")
+        return
     avg = {k: (float(np.mean([s[k] for s in stats])) if not isinstance(stats[0][k], list)
                else list(np.mean([s[k] for s in stats], axis=0))) for k in stats[0]}
     base = Grade.load(ROOT / "presets" / "channel_look.yaml")

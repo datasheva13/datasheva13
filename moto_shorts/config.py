@@ -49,5 +49,17 @@ def load_config(path: str | Path | None = None) -> Config:
         if not path.exists():
             path = ROOT / "config.example.yaml"
     with open(path, encoding="utf-8") as fh:
-        data: dict[str, Any] = yaml.safe_load(fh)
+        data: dict[str, Any] = yaml.safe_load(fh) or {}
+    # settings added in newer versions fall back to config.example.yaml defaults
+    example = ROOT / "config.example.yaml"
+    if Path(path).resolve() != example.resolve() and example.exists():
+        with open(example, encoding="utf-8") as fh:
+            data = _merge(yaml.safe_load(fh) or {}, data)
     return Config(data)
+
+
+def _merge(base: dict, override: dict) -> dict:
+    out = dict(base)
+    for k, v in override.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
