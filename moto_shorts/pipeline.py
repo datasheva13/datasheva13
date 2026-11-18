@@ -515,6 +515,19 @@ class Pipeline:
                     p.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------ daily
+    def ran_today(self) -> bool:
+        """True if a run already finished today in your time zone."""
+        last = self.status().get("last_run_finished")
+        if not last:
+            return False
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self.cfg["paths"].get("timezone", "America/Denver"))
+        except Exception:
+            tz = timezone.utc
+        t = datetime.fromisoformat(last)
+        return t.astimezone(tz).date() == datetime.now(tz).date()
+
     def daily(self) -> None:
         self.set_status(last_run_started=now(), running=True)
         try:

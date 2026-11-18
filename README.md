@@ -2,7 +2,7 @@
 
 Turns raw GoPro off-road POV footage into cinematic, raw-sound shorts, every day.
 
-**What it does each morning**
+**What it does (once a day, when you start your computer)**
 1. Cleans up: posted videos older than 7 days, and downloaded/working files older than 30 days (videos waiting for review are never deleted).
 2. Downloads rides from your **whole** GoPro Cloud library, half newest and half random older ones, so old footage gets used (or picks up files you drop in `inbox`).
 3. Skips anything that isn't a motorcycle ride (mountain biking etc.) and moments where no part of the bike is visible (Claude checks a few frames per video, about $0.02 each).
@@ -46,11 +46,11 @@ Run the check again any time:
 ### 4. Phone folder for TikTok / Instagram
 Install **Google Drive for desktop** (or iCloud/OneDrive), then in `config.yaml` set `handoff_dir:` to a folder inside it, e.g. `G:\My Drive\MotoShorts`. Every approved short lands there as `tiktok.mp4` + `instagram.mp4` + covers + `caption.txt`, ready on your phone.
 
-### 5. Turn on the daily run
+### 5. Run it automatically when you start your computer
 ```
-powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -Time 06:15
+powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1
 ```
-Keep the laptop plugged in. It can wake itself from sleep (see the tip the script prints). Logs: `work\logs`.
+Runs 2 minutes after you sign in, at most once per day (restarting won't create extra shorts). Waking from sleep doesn't count as signing in. Logs: `work\logs`.
 
 ### 6. Review
 Double-click **`scripts\start_dashboard.bat`**. It opens http://127.0.0.1:8765.

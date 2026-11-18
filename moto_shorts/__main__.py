@@ -33,6 +33,11 @@ def main(argv: list[str]) -> int:
     p = Pipeline(cfg)
     if cmd == "daily":
         p.daily()
+    elif cmd == "startup":            # run at sign-in: only once per (local) day
+        if p.ran_today():
+            print("already ran today - skipping (use 'daily' or the dashboard's Run now to force)")
+        else:
+            p.daily()
     elif cmd == "ingest":
         print(f"added {p.ingest()} files")
     elif cmd == "analyze":
