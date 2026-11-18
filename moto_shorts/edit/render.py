@@ -47,6 +47,7 @@ class RenderSettings:
     background_dim: float = 0.72
     audio_fade: float = 0.35
     music_volume_db: float = -16
+    loop_crossfade: float = 0.25          # blend at the loop's internal cut (0 = hard cut)
 
     @classmethod
     def from_config(cls, cfg) -> "RenderSettings":
@@ -65,6 +66,7 @@ class RenderSettings:
             background_dim=float(s.get("background_dim", 0.72)),
             audio_fade=float(s.get("audio_fade", 0.35)),
             music_volume_db=float(s.get("music_volume_db", -16)),
+            loop_crossfade=float(s.get("loop_crossfade", 0.25)),
         )
 
 
@@ -97,13 +99,25 @@ def render_short(
     out_w, out_h = settings.short_size
     end = start + duration
     if loop_split is not None and start + 1.0 < loop_split < end - 1.0:
-        inputs = ["-ss", f"{loop_split:.3f}", "-t", f"{end - loop_split:.3f}", "-i", str(src),
-                  "-ss", f"{start:.3f}", "-t", f"{loop_split - start:.3f}", "-i", str(src)]
-        # tiny audio fades at the internal cut so the jump doesn't click
         b_len, a_len = end - loop_split, loop_split - start
-        pre = (f"[0:a]afade=t=out:st={max(b_len - 0.04, 0):.3f}:d=0.04[ab];"
-               f"[1:a]afade=t=in:d=0.04[aa];"
-               f"[0:v][ab][1:v][aa]concat=n=2:v=1:a=1[cv][ca];")
+        # blend length: limited by the footage available after `end` and by the part lengths
+        x = max(0.0, min(settings.loop_crossfade, a_len / 3, b_len / 3,
+                         max(ff.probe(src).duration - end - 0.05, 0.0)))
+        if x >= 0.04:
+            inputs = ["-ss", f"{loop_split:.3f}", "-t", f"{b_len + x:.3f}", "-i", str(src),
+                      "-ss", f"{start:.3f}", "-t", f"{a_len:.3f}", "-i", str(src)]
+            # soft dissolve + equal-power audio crossfade at the internal cut (length unchanged)
+            pre = (f"[0:v]settb=AVTB,setpts=PTS-STARTPTS[v0];[1:v]settb=AVTB,setpts=PTS-STARTPTS[v1];"
+                   f"[v0][v1]xfade=transition=fade:duration={x:.3f}:offset={b_len:.3f}[cv];"
+                   f"[0:a]asetpts=PTS-STARTPTS[a0];[1:a]asetpts=PTS-STARTPTS[a1];"
+                   f"[a0][a1]acrossfade=d={x:.3f}:c1=qsin:c2=qsin[ca];")
+        else:
+            inputs = ["-ss", f"{loop_split:.3f}", "-t", f"{b_len:.3f}", "-i", str(src),
+                      "-ss", f"{start:.3f}", "-t", f"{a_len:.3f}", "-i", str(src)]
+            # hard cut: tiny audio fades so the jump doesn't click
+            pre = (f"[0:a]afade=t=out:st={max(b_len - 0.04, 0):.3f}:d=0.04[ab];"
+                   f"[1:a]afade=t=in:d=0.04[aa];"
+                   f"[0:v][ab][1:v][aa]concat=n=2:v=1:a=1[cv][ca];")
         vin, ain, music_idx = "[cv]", "[ca]", 2
     else:
         inputs = ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src)]

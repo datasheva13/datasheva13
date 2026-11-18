@@ -22,6 +22,7 @@ from .captions.generate import CaptionSet, fallback_captions, generate_captions
 from .config import Config
 from .db import DB, now
 from .edit.grade import Grade
+from .edit.loopcut import best_loop_pair
 from .edit.render import (RenderSettings, Segment, normalization_for, render_instagram_rotated, render_long,
                           render_short, render_social)
 from .ingest.gopro_cloud import GoProCloud, TokenExpired, inbox_files, move_into
@@ -180,7 +181,8 @@ class Pipeline:
         return an, {"speed": d["speed"], "climb": d["climb"]}
 
     # ------------------------------------------------------------------ picking
-    def _free_candidates(self, min_len: int, max_len: int) -> tuple[list[Candidate], dict[int, np.ndarray]]:
+    def _free_candidates(self, min_len: int, max_len: int,
+                         loop: bool = False) -> tuple[list[Candidate], dict[int, np.ndarray]]:
         used = self.db.used_ranges()
         uses = self.db.source_use_counts()
         cands, onsets = [], {}
@@ -193,7 +195,7 @@ class Pipeline:
             # bike must be in view; beautiful color matters; then the usual sound+scenery score
             an.total = (0.82 * an.total + 0.18 * colors) * vis
             onsets[s["id"]] = an.onset_times
-            for c in windows(an, s["id"], min_len, max_len):
+            for c in windows(an, s["id"], min_len, max_len, loop=loop):
                 if any(c.start < e + 2 and b < c.end + 2 for b, e in used.get(s["id"], [])):
                     continue
                 if float(vis[int(c.start):int(c.end)].mean()) < 0.6:      # mostly no bike visible
@@ -204,12 +206,23 @@ class Pipeline:
 
     def pick_shorts(self, k: int) -> list[int]:
         d = self.cfg["daily"]
-        cands, onsets = self._free_candidates(int(d["short_min_seconds"]), int(d["short_max_seconds"]))
+        cands, onsets = self._free_candidates(int(d["short_min_seconds"]), int(d["short_max_seconds"]), loop=True)
         picks = select(cands, k, self.db.recent_embeddings(), onsets=onsets)
         ids = []
         for c in picks:
-            ids.append(self.db.add_clip("short", c.source_id, c.start, c.duration, c.score, c.embedding))
-            log(f"picked short: source {c.source_id} @ {c.start:.0f}s for {c.duration:.0f}s (score {c.score:.2f})")
+            start, end = c.start, c.end
+            if c.split is not None:                 # smooth the internal cut (opening stays fixed)
+                try:
+                    src = self.ensure_local(c.source_id)
+                    start, end = best_loop_pair(src, c.start, c.end, c.split,
+                                                src_duration=self.db.source(c.source_id)["duration"])
+                except Exception as e:
+                    log(f"loop smoothing skipped: {e}")
+            cid = self.db.add_clip("short", c.source_id, start, end - start, c.score, c.embedding)
+            self.db.update_clip(cid, loop_split=c.split)
+            ids.append(cid)
+            log(f"picked short: source {c.source_id} {start:.1f}-{end:.1f}s, opens at {c.split or start:.1f}s "
+                f"(score {c.score:.2f})")
         if len(picks) < k:
             log(f"only {len(picks)} good unused moments left - add more footage")
         return ids
@@ -258,9 +271,12 @@ class Pipeline:
         tracks = [p for p in d.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".flac", ".m4a")] if d.exists() else []
         return random.choice(tracks) if tracks else None
 
-    def _loop_split(self, source_id: int, start: float, dur: float) -> float:
-        """Where the loop is cut: on a throttle hit 40-65% into the clip, so the short opens
+    def _loop_split(self, source_id: int, start: float, dur: float, stored: float | None = None) -> float:
+        """The opening of the short. Uses the stored split (the best moment) when it's still
+        inside the clip; otherwise where the loop is cut: on a throttle hit 40-65% into the clip, so the short opens
         on sound and the hidden cut lands on a sharp moment."""
+        if stored is not None and start + 1.5 < stored < start + dur - 1.5:
+            return float(stored)
         lo, hi = start + dur * 0.40, start + dur * 0.65
         src = self.db.source(source_id)
         if src["analysis_path"]:
@@ -294,7 +310,7 @@ class Pipeline:
 
             settings = RenderSettings.from_config(self.cfg)
             norm = normalization_for(src, start, dur, grade)
-            split = self._loop_split(clip["source_id"], start, dur) if clip["loop"] else None
+            split = self._loop_split(clip["source_id"], start, dur, clip["loop_split"]) if clip["loop"] else None
             log(f"rendering short {clip_id} ({settings.encoder}) ...")
             music = self._music(bool(clip["music"]))
             master = render_short(src, start, dur, out_dir / "youtube_short_4k.mp4", settings, grade, norm,

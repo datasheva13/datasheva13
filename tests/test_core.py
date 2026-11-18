@@ -248,3 +248,51 @@ def test_fallback_is_flagged_and_varied():
     from moto_shorts.captions.generate import fallback_captions
     a = fallback_captions(POOL, reason="x", avoid_words=["ASCENT"])
     assert a.note and len(a.hooks) == 5 and len(a.thumbnail_words) == 5 and "ASCENT" not in a.thumbnail_words
+
+
+# ---------------------------------------------------------------- attention-first loops
+def test_loop_window_puts_peak_right_after_split():
+    total = [0.3] * 30
+    for i in range(18, 21):
+        total[i] = 1.0                                   # the best moment
+    an = _analysis(total)
+    cands = windows(an, 1, 12, 12, loop=True)
+    best = max(cands, key=lambda c: c.score)
+    assert best.split is not None and 17 <= best.split <= 19
+    assert best.start + 0.4 * best.duration - 1 <= best.split <= best.start + 0.65 * best.duration + 1
+
+
+def test_best_loop_pair_finds_matching_moment(tmp_path):
+    from moto_shorts.edit.loopcut import best_loop_pair
+    # colour + tone drift over time; only seconds ~3 and ~13 look and sound the same (blue + 150 Hz)
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y",
+                    "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30:d=16",
+                    "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*(if(between(t,2.6,3.4)+between(t,12.6,13.4),150,300+100*t))*t)':s=48000:d=16",
+                    "-vf", "geq=r='if(between(T,2.6,3.4)+between(T,12.6,13.4),0,16*T)':g='if(between(T,2.6,3.4)+between(T,12.6,13.4),0,255-16*T)':b='if(between(T,2.6,3.4)+between(T,12.6,13.4),255,0)'",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(src)], check=True)
+    s, e = best_loop_pair(src, 2.0, 12.0, 8.0, search=1.5, src_duration=16)
+    assert 2.5 <= s <= 3.5 and 12.5 <= e <= 13.5
+
+
+def test_loop_crossfade_keeps_duration(tmp_path):
+    from moto_shorts.edit.render import RenderSettings, render_short
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=10",
+                    "-f", "lavfi", "-i", "sine=f=120:d=10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(src)], check=True)
+    s = RenderSettings(encoder="libx264", short_size=(180, 320), bitrate_master="2M", loop_crossfade=0.25)
+    m = render_short(src, 1.0, 6.0, tmp_path / "m.mp4", s, Grade(), loop_split=4.0)
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                str(m)], capture_output=True, text=True).stdout)
+    assert abs(dur - 6.0) < 0.2
+
+
+def test_reference_weights_75_25():
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import analyze_refs as a
+    main = {"black": 0.0, "tint": [0.0, 0.0, 0.0]}
+    infl = {"black": 1.0, "tint": [1.0, 1.0, 1.0]}
+    out = a.blend([([main] * 3, 0.75), ([infl] * 8, 0.25)])
+    assert out["black"] == pytest.approx(0.25) and out["tint"][0] == pytest.approx(0.25)

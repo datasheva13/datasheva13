@@ -68,7 +68,8 @@ class DB:
         """Add columns introduced after the first release (keeps existing data)."""
         wanted = {
             "clips": {"instagram_path": "TEXT", "captions_note": "TEXT", "origin": "TEXT DEFAULT 'auto'",
-                      "loop": "INTEGER DEFAULT 1", "handoff_path": "TEXT"},
+                      "loop": "INTEGER DEFAULT 1", "handoff_path": "TEXT",
+                      "loop_split": "REAL"},
             "sources": {"bike_check": "TEXT", "usable": "INTEGER DEFAULT 1", "origin": "TEXT DEFAULT 'auto'"},
         }
         for table, cols in wanted.items():

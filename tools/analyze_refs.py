@@ -1,7 +1,7 @@
 """Measure the look of reference videos and write a matching grade preset.
 
 Usage (on your computer, not in the cloud):
-    python tools/analyze_refs.py                                   # the default references below
+    python tools/analyze_refs.py                                   # your 3 videos (75%) + ScramblerPOV (25%)
     python tools/analyze_refs.py URL@START ...                     # specific videos (START in seconds)
     python tools/analyze_refs.py https://www.youtube.com/@ScramblerPOV/videos   # a whole channel:
                                                                    # samples its 8 latest videos
@@ -28,12 +28,17 @@ from moto_shorts.edit.grade import Grade  # noqa: E402
 
 CHANNEL_VIDEOS = 8
 
-REFERENCES = [
-    "https://www.youtube.com/@ScramblerPOV/videos",     # the look to copy
+# Your 3 videos are the main look; ScramblerPOV is a light influence (not copied).
+MAIN_REFERENCES = [
+    "https://www.youtube.com/watch?v=c7Dpmg-PI4c@132",
+    "https://www.youtube.com/watch?v=tFxxQcsjBO0@295",
+    "https://www.youtube.com/watch?v=0fMoZ0-cAY4@33",
 ]
-# earlier references (pass them explicitly to include them):
-#   https://www.youtube.com/watch?v=c7Dpmg-PI4c@132  https://www.youtube.com/watch?v=tFxxQcsjBO0@295
-#   https://www.youtube.com/watch?v=0fMoZ0-cAY4@33
+INFLUENCE_REFERENCES = [
+    "https://www.youtube.com/@ScramblerPOV/videos",
+]
+MAIN_WEIGHT = 0.75          # share of the final look from MAIN_REFERENCES
+INFLUENCE_WEIGHT = 0.25     # share from INFLUENCE_REFERENCES (all sampled videos together)
 SECONDS = 40
 
 
@@ -118,12 +123,28 @@ def expand(refs: list[str]) -> list[str]:
     return out
 
 
-def main(args: list[str]) -> None:
-    refs = expand(args or REFERENCES)
-    work = Path(tempfile.gettempdir()) / "moto_refs"
-    work.mkdir(exist_ok=True)
-    stats, shots = [], []
-    for ref in refs:
+def _mean(stats: list[dict]) -> dict:
+    return {k: (float(np.mean([s[k] for s in stats])) if not isinstance(stats[0][k], list)
+                else list(np.mean([s[k] for s in stats], axis=0))) for k in stats[0]}
+
+
+def blend(groups: list[tuple[list[dict], float]]) -> dict:
+    """Weighted average of group averages: a group of 8 videos counts no more than its weight."""
+    groups = [(st, w) for st, w in groups if st and w > 0]
+    total = sum(w for _, w in groups)
+    means = [(_mean(st), w / total) for st, w in groups]
+    out = {}
+    for k in means[0][0]:
+        if isinstance(means[0][0][k], list):
+            out[k] = list(np.sum([np.array(m[k]) * w for m, w in means], axis=0))
+        else:
+            out[k] = float(sum(m[k] * w for m, w in means))
+    return out
+
+
+def measure_group(refs: list[str], work: Path, shots: list[float]) -> list[dict]:
+    stats = []
+    for ref in expand(refs):
         url, _, start = ref.partition("@")
         print(f"Downloading {SECONDS}s of {url} from {start or 0}s ...")
         try:
@@ -137,11 +158,24 @@ def main(args: list[str]) -> None:
         shots.append(s)
         print(f"  black {m['black']:.3f}  white {m['white']:.3f}  contrast {m['contrast']:.3f}  "
               f"saturation {m['saturation']:.3f}  avg shot {s:.1f}s")
-    if not stats:
+    return stats
+
+
+def main(args: list[str]) -> None:
+    work = Path(tempfile.gettempdir()) / "moto_refs"
+    work.mkdir(exist_ok=True)
+    shots: list[float] = []
+    if args:                                  # links given on the command line: equal weight
+        groups = [(measure_group(args, work, shots), 1.0)]
+    else:
+        print(f"Main look ({int(MAIN_WEIGHT * 100)}%):")
+        main_stats = measure_group(MAIN_REFERENCES, work, shots)
+        print(f"Influence ({int(INFLUENCE_WEIGHT * 100)}%):")
+        groups = [(main_stats, MAIN_WEIGHT), (measure_group(INFLUENCE_REFERENCES, work, shots), INFLUENCE_WEIGHT)]
+    if not any(st for st, _ in groups):
         print("Nothing could be downloaded - check your internet connection / the links.")
         return
-    avg = {k: (float(np.mean([s[k] for s in stats])) if not isinstance(stats[0][k], list)
-               else list(np.mean([s[k] for s in stats], axis=0))) for k in stats[0]}
+    avg = blend(groups)
     base = Grade.load(ROOT / "presets" / "channel_look.yaml")
     g = to_grade(avg, base)
     out = ROOT / "presets" / "reference_look.yaml"

@@ -7,7 +7,7 @@ Turns raw GoPro off-road POV footage into cinematic, raw-sound shorts, every day
 2. Downloads rides from your **whole** GoPro Cloud library, half newest and half random older ones, so old footage gets used (or picks up files you drop in `inbox`).
 3. Skips anything that isn't a motorcycle ride (mountain biking etc.) and moments where no part of the bike is visible (Claude checks a few frames per video, about $0.02 each).
 4. Finds the best moments by exhaust sound, color, scenery and GPS, and alternates between rides. One video can give many shorts.
-5. Makes **2 shorts a day** as seamless loops: the clip's ending plays first, then it cuts to the beginning, so the replay joins up. Every platform gets the 9:16 blurred-background layout and a natural cinematic grade.
+5. Makes **2 shorts a day** as seamless loops, attention first: each moment is chosen so its best part (the strongest exhaust + view) opens the short. The rest follows, then a soft blend jumps back to the start at the point where sound and picture match best, so the replay joins up. Every platform gets the 9:16 blurred-background layout and a natural cinematic grade.
 6. Claude writes **5 hooks**, a title, a description, 3 hashtags and **5 thumbnail words** for every video, never repeating earlier ones.
 7. Builds a long 16:9 YouTube video once enough good footage has piled up.
 
@@ -66,7 +66,7 @@ Click **Approve**, then post:
 ```
 .venv\Scripts\python tools\analyze_refs.py
 ```
-By default it samples 8 recent videos from **ScramblerPOV** (or pass any channel or video links). It measures them (contrast, black level, tint, saturation, shot length) and writes `presets\reference_look.yaml`. To use it, set `style: preset: presets/reference_look.yaml` in `config.yaml`. Compare the result in the dashboard. Every number in the preset is readable and tweakable. The rule: subtle. If it looks "edited", lower it.
+By default it uses your 3 reference videos as the main look (75%) with 8 sampled **ScramblerPOV** videos as a light influence (25%). You can change the links and weights at the top of `tools\analyze_refs.py`. It measures them (contrast, black level, tint, saturation, shot length) and writes `presets\reference_look.yaml`. To use it, set `style: preset: presets/reference_look.yaml` in `config.yaml`. Compare the result in the dashboard. Every number in the preset is readable and tweakable. The rule: subtle. If it looks "edited", lower it.
 
 ## Useful commands
 | Command | What it does |

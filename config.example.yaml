@@ -43,6 +43,7 @@ style:
   blur_sigma: 40                # background blur strength for the 9:16 layout
   background_dim: 0.72          # background brightness (1.0 = same as foreground)
   audio_fade: 0.35
+  loop_crossfade: 0.25          # soft blend (seconds) where the loop jumps from the end back to the start
   music_dir: ./music            # optional: your own tracks (wav/mp3/flac)
   music_volume_db: -16          # music sits under the exhaust
 
